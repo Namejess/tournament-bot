@@ -11,16 +11,14 @@ from google.auth import load_credentials_from_file
 # Load .env file
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
+CALENDAR_ID = os.getenv('CALENDAR_ID')
 
 # Bot configuration
 intents = discord.Intents.default()
 intents.messages = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
-
-# Google Calendar API configuration
-GOOGLE_API_KEY = "AIzaSyATql_wEgjDLLQFqfxA8OOhj4nsWrdxVsQ"
-CALENDAR_ID = "aniskxhmifgc@gmail.com"
 
 # Set up Google Calendar service (Assume credentials.json is available)
 def get_calendar_service():
