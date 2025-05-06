@@ -1,0 +1,1 @@
+worker: python tournament_bot_debug.py 
