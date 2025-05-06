@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -14,6 +14,7 @@ load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 CALENDAR_ID = os.getenv('CALENDAR_ID')
+ANNOUNCEMENT_CHANNEL_ID = int(os.getenv('ANNOUNCEMENT_CHANNEL_ID', '0'))  # ID du salon pour les annonces
 
 # Bot configuration
 intents = discord.Intents.default()
@@ -22,6 +23,34 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+@bot.event
+async def on_ready():
+    print(f'{bot.user} has connected to Discord!')
+    # Démarrer la tâche planifiée
+    if not daily_tournament_announcement.is_running():
+        daily_tournament_announcement.start()
+
+@tasks.loop(minutes=1)
+async def daily_tournament_announcement():
+    # Pour le test, on envoie directement sans attendre midi
+    channel = bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
+    if channel:
+        await get_tournament(channel, "today")
+
+    # # Attendre jusqu'à midi
+    # now = datetime.now()
+    # if now.hour < 12:
+    #     # Attendre jusqu'à midi
+    #     await discord.utils.sleep_until(datetime(now.year, now.month, now.day, 12, 0))
+    # else:
+    #     # Attendre jusqu'à midi le lendemain
+    #     tomorrow = now + timedelta(days=1)
+    #     await discord.utils.sleep_until(datetime(tomorrow.year, tomorrow.month, tomorrow.day, 12, 0))
+    
+    # # Envoyer l'annonce tous les jours
+    # channel = bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
+    # if channel:
+    #     await get_tournament(channel, "today")
 
 # Set up Google Calendar service (Assume credentials.json is available)
 def get_calendar_service():
@@ -114,8 +143,8 @@ async def get_tournament(ctx, date: str = None):
     url = f"https://www.googleapis.com/calendar/v3/calendars/{CALENDAR_ID}/events"
     params = {
         "key": GOOGLE_API_KEY,
-        "timeMin": f"{date}T00:00:00Z",  # début de la journée en UTC
-        "timeMax": f"{date}T23:59:59Z",  # fin de la journée en UTC
+        "timeMin": f"{date}T00:00:00Z",
+        "timeMax": f"{date}T23:59:59Z",
         "singleEvents": True,
         "orderBy": "startTime",
     }
@@ -126,17 +155,11 @@ async def get_tournament(ctx, date: str = None):
     if not events:
         await ctx.send(f"Aucun tournoi trouvé pour le {date}.")
     else:
+        event_count = 1
         for event in events:
             start = event["start"].get("dateTime", event["start"].get("date"))
-            event_date = start.split("T")[0]  # Extrait juste la date sans l'heure
+            event_date = start.split("T")[0]
 
-            # Extraire l'heure de début si elle est présente
-            event_time = ""
-            if "dateTime" in event["start"]:
-                event_time = datetime.fromisoformat(event["start"]["dateTime"]).strftime("%H:%M")
-            else:
-                event_time = "Non spécifié"  # Cas où il n'y a pas d'heure définie, juste une date
-            
             if event_date == date:
                 event_name = event['summary']
                 event_link = event.get('htmlLink', 'Aucun lien disponible')
@@ -149,7 +172,6 @@ async def get_tournament(ctx, date: str = None):
                     for rule in recurrence:
                         if 'RRULE' in rule:
                             recurrence_info = rule.split('RRULE:')[1].strip()
-                            # Simplifier l'affichage de la récurrence
                             if 'FREQ=WEEKLY' in recurrence_info:
                                 recurrence_info = "Toutes les semaines"
                             elif 'FREQ=MONTHLY' in recurrence_info:
@@ -158,15 +180,19 @@ async def get_tournament(ctx, date: str = None):
                                 recurrence_info = "Tous les jours"
 
                 # Formatage du message avec plus de détails
-                message_event = f"**{event_name}**\n"
+                message_event = f"# Event {event_count}\n"
+                message_event += f"**{event_name}**\n"
                 
                 # Ajout de la date formatée
                 start_date = datetime.fromisoformat(start.split('T')[0])
                 message_event += f"{start_date.strftime('%A, %d %B').capitalize()}\n"
                 
                 # Ajout de l'heure si spécifiée
-                if event_time != "Non spécifié":
-                    message_event += f"Début : {event_time}\n"
+                event_time = ""
+                if "dateTime" in event["start"]:
+                    event_time = datetime.fromisoformat(event["start"]["dateTime"]).strftime("%H:%M")
+                else:
+                    event_time = "Non spécifié"  # Cas où il n'y a pas d'heure définie, juste une date
                 
                 # Ajout des informations de récurrence
                 if recurrence_info:
@@ -174,7 +200,6 @@ async def get_tournament(ctx, date: str = None):
                 
                 # Ajout de la description complète
                 if description:
-                    # Nettoyer les balises HTML de la description
                     clean_description = clean_html_tags(description)
                     message_event += f"\n{clean_description}\n"
                 
@@ -182,6 +207,7 @@ async def get_tournament(ctx, date: str = None):
 
                 # Envoyer un message séparé pour chaque tournoi
                 await ctx.send(message_event)
+                event_count += 1
 
 # Run the bot
 bot.run(TOKEN)
